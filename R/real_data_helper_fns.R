@@ -77,14 +77,12 @@ common.Wcheckformat <- function(W)
 
 # For Model Diagnostics
 
-#' Diagnosing estimation performance by examining the MCMC draws
-#' ggplot boxplots and/or error bars
-#'
-#' @param mcmc_df matrix of dimension number of parameters x number of MCMC iterations
-#' To get informative x-labels, do something like the following:
-#' mcmc_df <- ups2mcmc[1, , ]
-#' row.names(mcmc_df) <- paste0("ups2_", 1:7)
-#' @param truth the true values of the estimated parameters, if available.
+# Diagnosing estimation performance by examining the MCMC draws
+# ggplot boxplots and/or error bars
+#
+# param mcmc_df matrix of dimension number of parameters x number of MCMC iterations
+# To get informative x-labels, do something like the following: mcmc_df <- get the first slice of ups2mcmc, then: row.names(mcmc_df) <- paste0("ups2_", 1:7)
+# param truth the true values of the estimated parameters, if available.
 mcmc_boxplot_cred_ints <- function(mcmc_df, truth = NULL, boxplot = T, errorbar = T, main = "MCMC boxplots and credible intervals") {
 
   # Transform the matrix data.
@@ -133,11 +131,11 @@ mcmc_boxplot_cred_ints <- function(mcmc_df, truth = NULL, boxplot = T, errorbar 
 
 
 
-#' Plotting a ggplot that displays the bayesian p-value calculated from the posterior predictive distribution, for all data points.
-#'
-#' Arguments:
-#' data_rbind: a matrix containing all of the observed values, where the data are rbinded across the tissue sections
-#' Xppd_array: an array containing the PPD of each datapoint, in which there are 1000s of MCMC draws for each datapoint
+# Plotting a ggplot that displays the bayesian p-value calculated from the posterior predictive distribution, for all data points.
+#
+# Arguments:
+# data_rbind: a matrix containing all of the observed values, where the data are rbinded across the tissue sections
+# Xppd_array: an array containing the PPD of each datapoint, in which there are 1000s of MCMC draws for each datapoint
 data_points_bayesian_pval <- function(data_rbind, Xppd_array) {
 
   # flatten both data_rbind and Xppd_array along each genetic feature

@@ -1,0 +1,7 @@
+PKG_CXXFLAGS = -O3 -ffast-math
+PKG_CPPFLAGS = -I$(R_TOOLS_SOFT)/include
+PKG_LIBS = -L$(R_TOOLS_SOFT)/lib$(R_ARCH) -lgsl -lgslcblas
+
+# Helps the compiler optimize across different .cpp files
+PKG_CXXFLAGS += -flto
+PKG_LIBS += -flto

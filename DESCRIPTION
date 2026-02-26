@@ -1,15 +1,23 @@
 Package: BayesClint
-Title: What the Package Does (One Line, Title Case)
+Title: BayesClint: Bayesian Multi-Scale Clustering and Multi-Sample Integration With Feature Selection for Spatial Transcriptomics Data
 Version: 0.0.0.9000
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"))
-Description: What the package does (one paragraph).
+    person("Alvin", "Sheng", , "asheng1067@gmail.com", role = c("aut", "cre"))
+Description: BayesClint is a Bayesian method which simultaneously performs spatial clustering and gene selection on multiple samples of spatial transcriptomics data at single-cell resolution, where the clustering is done at both the single-cell and tissue regional scale. That is, the method simultaneously sorts the cells into cell types and partitions the cells into spatial domains of tissue. BayesClint also jointly selects active genes and differentially expressed genes that discriminate between cell type clusters.
+SystemRequirements: GSL (GNU Scientific Library)
 License: GPL (>= 3)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 LinkingTo: 
-    Rcpp
+    Rcpp,
+    RcppArmadillo,
+    RcppGSL
 Imports: 
     Rcpp,
+    RcppArmadillo,
+    RcppGSL,
     Seurat
+Depends: 
+    R (>= 3.5)
+LazyData: true

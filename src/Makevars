@@ -1,0 +1,7 @@
+PKG_CXXFLAGS = -O3 -ffast-math
+PKG_CPPFLAGS = $(shell gsl-config --cflags)
+PKG_LIBS = $(shell gsl-config --libs)
+
+# Helps the compiler optimize across different .cpp files
+PKG_CXXFLAGS += -flto
+PKG_LIBS += -flto

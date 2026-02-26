@@ -1,19 +1,19 @@
 
-#' Pre-process gene expression data
+#' Pre-process gene expression data by doing quality control, batch effect removal (if desired), log-normalization (using the counts-per-10K approach as done in Seurat by default), and scaling
 #'
 #' A function to pre-process the data to get it ready for the BayesClint algorithm.
 #' @param cnts list of gene count matrices across tissue sections, of dimensions number of genes by number of cells. Make sure both the rows and columns are labelled with gene names and cell names.
 #' @param info list of spatial coordinates across tissue sections, of dimensions number of cells by number of coordinates.
-#' @param K number of spatial domains (for Potts model calculations)
 #' @param cutoff_sample only retain quality cells with greater than cutoff_sample counts across genes
 #' @param cutoff_feature only retain quality genes with at least cutoff_feature percent of cells with nonzero counts
 #' @param doBatchCorrect Logical. Whether to perform batch effect adjustment with Seurat v3 (Stuart et al., 2019) to align expression data from different tissue sections.
+#' @returns a list of pre-processed gene expression matrices, one for each tissue section.
 #' @export
 #' @examples
 #' BayesClint_preprocess()
 #' TODO: complete the example above, once you make and document the starmap mpfc dataset and/or the basic simulation scenario dataset
-BayesClint_preprocess <- function(cnts, info, K, cutoff_sample = 100, cutoff_feature = 0.1,
-                                  doBatchCorrect = F, nc_quant_list = NULL) {
+BayesClint_preprocess <- function(cnts, info, cutoff_sample = 100, cutoff_feature = 0.1,
+                                  doBatchCorrect = F, doScaling = T) {
 
   Np <- length(cnts)
 
@@ -93,6 +93,62 @@ BayesClint_preprocess <- function(cnts, info, K, cutoff_sample = 100, cutoff_fea
 
 
 
+  obj_list <- Seurat::SplitObject(merged_obj, split.by = "orig.ident")
+
+  if (doScaling) {
+    # I use the "scale.data" slot, corresponding to the z-scored/variance-stabilized data (done separately by tissue section), rather than "counts" (un-normalized raw counts) or "data" (normalized counts)
+    # it is equivalent to using the scale(., center = T, scale = T) on "data"
+    dataList <- lapply(obj_list, function(x) t(as.matrix(x[["integrated"]]$scale.data)))
+  } else {
+    # I use the "data" slot, corresponding to the normalized counts, rather than "counts" (un-normalized raw counts) or "scale.data" (z-scored/variance-stabilized data)
+    dataList <- lapply(obj_list, function(x) t(as.matrix(x[["integrated"]]$scale.data)))
+  }
+
+
+
+  return(list(info = info, dataList = dataList))
+
+}
+
+
+
+#' Running the BayesClint MCMC algorithm
+#'
+#' A function to pre-process the data to get it ready for the BayesClint algorithm.
+#' @param dataList pre-processed dataset, like the one outputted by BayesClint_preprocess
+#' @param info list of spatial coordinates across tissue sections, of dimensions number of cells by number of coordinates. This should be the info returned by the BayesClint_preprocess's quality control.
+#' @param C number of cell types
+#' @param K number of spatial domains
+#' @param r number of components in the factor model
+#' @param nbrsample number of MCMC iterations retained
+#' @param burnin number of initial MCMC iterations discarded as burn-in
+#' @param probvarsel prior probability for an entry in the factor loadings matrix to be nonzero
+#' @param nc_quant_list the quantities used to compute the normalizing constant of the Potts model within the MCMC.
+#' The nc_quant_list object will already be calculated within the BayesClint_run function;
+#' however, since this step takes a long time, one can import nc_quant_list (precalculated by an earlier run of BayesClint_run)
+#' through this argument to skip this computationally intensive step. However, if the nc_quant_list argument is set to NULL,
+#' BayesClint_run will compute it and return it as one of the outputs.
+#' @param chainNbr MCMC chain number. The default is 1 for one MCMC number 1. If you want to run N multiple MCMC chains, make a loop in R as for(i in 1:N) BayesClint_run(..., chainNbr=i)
+#' @returns the MCMC results from the BayesClint algorithm, and optionally the intermediary data file nc_quant_list.
+#' @export
+#' @examples
+#' BayesClint_run()
+BayesClint_run <- function(dataList, info, C, K, r, nbrsample, burnin, probvarsel, nc_quant_list = NULL, chainNbr = 1) {
+
+  Np <- length(dataList)
+
+  P <- unique(sapply(dataList, ncol))
+  if (length(P) != 1) {
+    stop("Each element of dataList must have a number of columns equal to the number of features.")
+  }
+
+  return_nc_quant_list <- FALSE
+  if (is.null(nc_quant_list)) {
+    return_nc_quant_list <- TRUE
+  }
+
+
+
   # Spatial pre-processing ----
   xy <- lapply(info, function(info.i){
     as.matrix(info.i[, 1:2])
@@ -156,45 +212,125 @@ BayesClint_preprocess <- function(cnts, info, K, cutoff_sample = 100, cutoff_fea
     interp_coef_mat[, m] <- coeff
 
   }
+  # ----
 
 
 
-  obj_list <- Seurat::SplitObject(merged_obj, split.by = "orig.ident")
+  # Running the MCMC ----
+  IndicVar <- 0;
 
-  dataList <- lapply(obj_list, function(x) t(as.matrix(x[["integrated"]]$data)))
+  n <- NULL;
+  for (i in 1:Np){
+    n[i]=nrow(dataList[[i]])
+  }
+  datasets=do.call("rbind", dataList)
+
+  if (nbrsample<=20){
+    stop("Please specify a larger number of MCMC iterations")
+  }
+
+  if (is.null(r)){ # could rbind the datasets and do one PCA truncation instead
+    mysvd=lapply(1:Np, function(i)  svd(dataList[[i]]))
+    mysumsvd=lapply(1:Np, function(i) cumsum(mysvd[[i]]$d)/max(cumsum(mysvd[[i]]$d))*100)
+    KMax=max(unlist(lapply(1:Np, function(i) min(which(mysumsvd[[i]]>=80, arr.ind = TRUE))))) #chooses maximum from Np cumulative proportions
+    r=min(KMax+1,10)
+  }
 
 
 
-  return(list(Wtriplet_list = Wtriplet_list, Wbegfin_list = Wbegfin_list, interp_coef_mat = interp_coef_mat, dataList = dataList, nc_quant_list = nc_quant_list))
+  ptm <- proc.time()[3]
+
+  EstIMat1 <- vector(mode = "list", length = Np)
+  EstIMat2 <- vector(mode = "list", length = Np)
+  for (i in 1:Np) {
+    EstIMat1[[i]] <- sample(1:C, size = n[i], replace = T)
+    EstIMat2[[i]] <- sample(1:K, size = n[i], replace = T)
+  }
+
+  results <- mcmcfn(n = as.integer(n), P = as.integer(P), r = as.integer(r), Np = as.integer(Np), datasets = datasets, IndVar = as.integer(IndicVar), nbrsample = as.integer(nbrsample),
+                    burninsample = as.integer(burnin), CompoSelMean = as.double(rep(0,r)), VarSelMean = as.double(rep(0,r*P)), VarSelMeanGlobal = as.double(rep(0,P)),
+                    priorcompsel = c(1, 1), probvarsel = as.double(probvarsel),
+                    C = C, EstMat1 = matrix(rnorm(r*C), nrow = r, ncol = C),
+                    EstMat2 = diag(r),
+                    EstIMat1 = EstIMat1,
+                    K = K, EstIMat2 = EstIMat2,
+                    EstMat3 = matrix(runif(C*K), nrow = C, ncol = K),
+                    Wtriplet_list = Wtriplet_list, Wbegfin_list = Wbegfin_list,
+                    beta = rep(1, Np), interp_coef_mat = interp_coef_mat, chainNbr = chainNbr, streamline = T);
+
+  timing <- proc.time()[3] - ptm
+
+  results$timing <- timing
+  # ----
+
+
+
+  if (return_nc_quant_list) {
+    return(list(results = results, nc_quant_list = nc_quant_list))
+  } else {
+    return(list(results = results))
+  }
 
 }
 
 
 
-#' Pre-process gene expression data
+#' Post-process the posterior sampling results
 #'
-#' A function to pre-process the data to get it ready for the BayesClint algorithm.
-#' @param preprocess_results output from BASS_preprocess, containing
+#' Post-process the posterior sampling results to address the label switching issue associated with
+#' the sampling of cell type labels and spatial domain labels based on the ECR-1 algorithm, estimate
+#' the cell type labels and spatial domain labels as the mode of all their posterior samples, and
+#' estimate the cell type composition in each spatial domain based on the final estimates of cell type and
+#' spatial domain labels.
+#' @param zeta2mcmc MCMC samples of the cell type labels
+#' @param kappa2mcmc MCMC samples of the spatial domain labels
+#' @param mu2mcmc MCMC samples of the mu parameter
+#' @param C number of cell types
+#' @param K number of spatial domains
+#' @returns the cell type and spatial domain cluster labels, that have been corrected for label switching.
+#' Also returns the permutations returned by the label.switching::label.switching() function, which can be used to permute other parameters
+#' depending on the cluster labels, like mu, which is returned in this function as well (if mu2mcmc is provided).
+#' Also returns the cell type compositions calculated on the basis of the corrected cluster labels.
 #' @export
 #' @examples
-#' BayesClint_run()
-BayesClint_run <- function(preprocess_results) {
+#' BayesClint_postprocess()
+BayesClint_postprocess <- function(zeta2mcmc, kappa2mcmc,
+                                   mu2mcmc = NULL,
+                                   C, K) {
 
+  n <- sapply(zeta2mcmc, nrow)
+  Np <- length(zeta2mcmc)
 
+  zeta_z <- t(do.call("rbind", zeta2mcmc))
+  zeta_K <- C
+  zeta_ls <- label.switching::label.switching(method = "ECR-ITERATIVE-1", z = zeta_z, K = zeta_K)
+
+  kappa_z <- t(do.call("rbind", kappa2mcmc))
+  kappa_K <- K
+  kappa_ls <- label.switching::label.switching(method = "ECR-ITERATIVE-1", z = kappa_z, K = kappa_K)
+
+  # estimate the cell type compositions theta on the basis of the permuted zeta and kappa
+  theta_est <- prop.table(table(c(zeta_ls$clusters),
+                                c(kappa_ls$clusters)),
+                          margin = 2)
+  theta_est[is.nan(theta_est)] <- 0 # corresponding to spatial domains with no elements
+
+  # permute mu, if mu2mcmc object provided
+  if (!is.null(mu2mcmc)) {
+    permute_res <- label.switching::permute.mcmc(
+      aperm(mu2mcmc, c(3, 2, 1)),
+      zeta_ls$permutations$`ECR-ITERATIVE-1`)
+
+    mu2mcmc <- aperm(permute_res$output, c(3, 2, 1)) # reversing the dimension reordering
+  }
+
+  # split the corrected labels back into their tissues
+  zeta_est <- split(zeta_ls$clusters, rep(1:Np, times = n))
+  kappa_est <- split(kappa_ls$clusters, rep(1:Np, times = n))
+
+  return(list(zeta_est = zeta_est, kappa_est = kappa_est,
+              mu2mcmc = mu2mcmc, theta_est = theta_est))
 
 }
 
 
-
-# BayesClint_postprocess
-
-
-
-#' Pre-process gene expression data
-#'
-#' A function to pre-process the data to get it ready for the BayesClint algorithm.
-#' @param fdr false discovery rate
-#' @@export
-#' @examples
-#' hello()
-# BayesClint_performance
