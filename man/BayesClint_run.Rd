@@ -43,11 +43,38 @@ BayesClint_run will compute it and return it as one of the outputs.}
 \item{chainNbr}{MCMC chain number. The default is 1 for one MCMC number 1. If you want to run N multiple MCMC chains, make a loop in R as for(i in 1:N) BayesClint_run(..., chainNbr=i)}
 }
 \value{
-the MCMC results from the BayesClint algorithm, and optionally the intermediary data file nc_quant_list.
+Returns the list of MCMC results from the BayesClint algorithm, and optionally the intermediary data file nc_quant_list. The important elements of the list of MCMC results are described below.
+\item{VarSelMean}{A row-vectorized, P (number of genes) by r matrix of the posterior probabilities of inclusion for each gene, within each component.}
+\item{VarSelMeanGlobal}{A length-P vector of the posterior probabilities of inclusion for the genes across components.}
+\item{samples}{MCMC samples of the cell type labels zeta, spatial domain labels kappa, cell type means mu, cell type compositions theta, and Potts parameter beta for each tissue section.}
 }
 \description{
 A function to pre-process the data to get it ready for the BayesClint algorithm.
 }
 \examples{
-BayesClint_run()
+data("starmap_mpfc_subset")
+cnts <- starmap_mpfc_subset$starmap_cnts
+info <- starmap_mpfc_subset$starmap_info
+preprocess_results <- BayesClint_preprocess(cnts, info, cutoff_sample = 100, cutoff_feature = 0.1,
+doBatchCorrect = T, doScaling = T, k.filter = 50)
+set.seed(1057)
+run_results <- BayesClint_run(dataList = preprocess_results$dataList, info = preprocess_results$info,
+C = 15, K = 4, r = 9,
+nbrsample = 15000,
+burnin = 6500,
+probvarsel = 0.05,
+nc_quant_list = NULL,
+chainNbr = 1)
+postprocess_results <- BayesClint_postprocess(run_results$results$samples$zeta2mcmc,
+run_results$results$samples$kappa2mcmc,
+run_results$results$samples$mu2mcmc,
+C = 15, K = 4)
+# test the ARI performances (beware that this is hard-coded for the mPFC dataset)
+true_zeta <- do.call("c", lapply(preprocess_results$info, function(section) section$c))
+mclust::adjustedRandIndex(true_zeta, do.call("c", postprocess_results$zeta_est))
+true_kappa <- do.call("c", lapply(preprocess_results$info, function(section) section$z))
+mclust::adjustedRandIndex(true_kappa, do.call("c", postprocess_results$kappa_est))
+}
+\references{
+Sheng, A., Chekouo, T., Safo, S. E. (2026). BayesClint: Bayesian multi-scale clustering and multi-sample integration with feature selection for spatial transcriptomics data.
 }

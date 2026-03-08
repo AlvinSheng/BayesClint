@@ -7,39 +7,29 @@
 #' @param cutoff_sample only retain quality cells with greater than cutoff_sample counts across genes
 #' @param cutoff_feature only retain quality genes with at least cutoff_feature percent of cells with nonzero counts
 #' @param doBatchCorrect Logical. Whether to perform batch effect adjustment with Seurat v3 (Stuart et al., 2019) to align expression data from different tissue sections.
-#' @returns a list of pre-processed gene expression matrices, one for each tissue section.
+#' @returns From the original input cnts, this function returns a list of pre-processed gene expression matrices, one for each tissue section. Additionally, from the original input info, it returns the info that excludes cells removed through the quality control process.
 #' @export
-#' @examples
-#' BayesClint_preprocess()
-#' TODO: complete the example above, once you make and document the starmap mpfc dataset and/or the basic simulation scenario dataset
+#' # See documentation for BayesClint_run
 BayesClint_preprocess <- function(cnts, info, cutoff_sample = 100, cutoff_feature = 0.1,
-                                  doBatchCorrect = F, doScaling = T) {
+                                  doBatchCorrect = F, doScaling = T, k.filter = 200) {
 
   Np <- length(cnts)
-
-  section_idx <- factor(rep(1:Np, times = sapply(cnts, ncol)))
 
   # Quality Control ----
   pre_tdataList <- cnts # recall that tdataList generally refers to genes by cells, whereas dataList refers to cells by genes
 
   # subsetting out the low-quality cells.
-  cells2remove <- c() # append elements into this vector, if not in it already
   for (m in 1:Np) {
     section <- pre_tdataList[[m]]
     c2remove <- which(apply(section, 2, sum) < cutoff_sample)
-    cells2remove <- base::append(cells2remove, c2remove)
-  }
-  # eliminate duplicates
-  cells2remove <- unique(cells2remove)
 
-  if (length(cells2remove) > 0) {
-    pre_tdataList <- lapply(pre_tdataList, function(section) {
-      section <- section[, -cells2remove]
-    })
-    info <- lapply(info, function(section) {
-      section <- section[-cells2remove, ]
-    })
+    if (length(c2remove) > 0) {
+      pre_tdataList[[m]] <- pre_tdataList[[m]][, -c2remove]
+      info[[m]] <- info[[m]][-c2remove, ]
+    }
   }
+
+
 
   # subsetting out the low-quality genes
   genes2remove <- c() # append elements into this vector, if not in it already
@@ -58,6 +48,8 @@ BayesClint_preprocess <- function(cnts, info, cutoff_sample = 100, cutoff_featur
   }
 
   cnts <- pre_tdataList
+
+  section_idx <- factor(rep(1:Np, times = sapply(cnts, ncol)))
   # ----
 
 
@@ -76,7 +68,7 @@ BayesClint_preprocess <- function(cnts, info, cutoff_sample = 100, cutoff_featur
 
   if (doBatchCorrect) {
     # find anchors
-    anchors <- Seurat::FindIntegrationAnchors(object.list = seuList)
+    anchors <- Seurat::FindIntegrationAnchors(object.list = seuList, k.filter = k.filter)
     # integrate data
     suppressWarnings(merged_obj <- Seurat::IntegrateData(anchorset = anchors))
     # switch to integrated assay. The variable features of this assay are automatically
@@ -101,12 +93,12 @@ BayesClint_preprocess <- function(cnts, info, cutoff_sample = 100, cutoff_featur
     dataList <- lapply(obj_list, function(x) t(as.matrix(x[["integrated"]]$scale.data)))
   } else {
     # I use the "data" slot, corresponding to the normalized counts, rather than "counts" (un-normalized raw counts) or "scale.data" (z-scored/variance-stabilized data)
-    dataList <- lapply(obj_list, function(x) t(as.matrix(x[["integrated"]]$scale.data)))
+    dataList <- lapply(obj_list, function(x) t(as.matrix(x[["integrated"]]$data)))
   }
 
 
 
-  return(list(info = info, dataList = dataList))
+  return(list(dataList = dataList, info = info))
 
 }
 
@@ -129,10 +121,35 @@ BayesClint_preprocess <- function(cnts, info, cutoff_sample = 100, cutoff_featur
 #' through this argument to skip this computationally intensive step. However, if the nc_quant_list argument is set to NULL,
 #' BayesClint_run will compute it and return it as one of the outputs.
 #' @param chainNbr MCMC chain number. The default is 1 for one MCMC number 1. If you want to run N multiple MCMC chains, make a loop in R as for(i in 1:N) BayesClint_run(..., chainNbr=i)
-#' @returns the MCMC results from the BayesClint algorithm, and optionally the intermediary data file nc_quant_list.
+#' @returns Returns the list of MCMC results from the BayesClint algorithm, and optionally the intermediary data file nc_quant_list. The important elements of the list of MCMC results are described below.
+#' \item{VarSelMean}{A row-vectorized, P (number of genes) by r matrix of the posterior probabilities of inclusion for each gene, within each component.}
+#' \item{VarSelMeanGlobal}{A length-P vector of the posterior probabilities of inclusion for the genes across components.}
+#' \item{samples}{MCMC samples of the cell type labels zeta, spatial domain labels kappa, cell type means mu, cell type compositions theta, and Potts parameter beta for each tissue section.}
 #' @export
 #' @examples
-#' BayesClint_run()
+#' data("starmap_mpfc_subset")
+#' cnts <- starmap_mpfc_subset$starmap_cnts
+#' info <- starmap_mpfc_subset$starmap_info
+#' preprocess_results <- BayesClint_preprocess(cnts, info, cutoff_sample = 100, cutoff_feature = 0.1,
+#' doBatchCorrect = T, doScaling = T, k.filter = 50)
+#' set.seed(1057)
+#' run_results <- BayesClint_run(dataList = preprocess_results$dataList, info = preprocess_results$info,
+#' C = 15, K = 4, r = 9,
+#' nbrsample = 15000,
+#' burnin = 6500,
+#' probvarsel = 0.05,
+#' nc_quant_list = NULL,
+#' chainNbr = 1)
+#' postprocess_results <- BayesClint_postprocess(run_results$results$samples$zeta2mcmc,
+#' run_results$results$samples$kappa2mcmc,
+#' run_results$results$samples$mu2mcmc,
+#' C = 15, K = 4)
+#' # test the ARI performances (beware that this is hard-coded for the mPFC dataset)
+#' true_zeta <- do.call("c", lapply(preprocess_results$info, function(section) section$c))
+#' mclust::adjustedRandIndex(true_zeta, do.call("c", postprocess_results$zeta_est))
+#' true_kappa <- do.call("c", lapply(preprocess_results$info, function(section) section$z))
+#' mclust::adjustedRandIndex(true_kappa, do.call("c", postprocess_results$kappa_est))
+#' @references Sheng, A., Chekouo, T., Safo, S. E. (2026). BayesClint: Bayesian multi-scale clustering and multi-sample integration with feature selection for spatial transcriptomics data.
 BayesClint_run <- function(dataList, info, C, K, r, nbrsample, burnin, probvarsel, nc_quant_list = NULL, chainNbr = 1) {
 
   Np <- length(dataList)
@@ -287,13 +304,12 @@ BayesClint_run <- function(dataList, info, C, K, r, nbrsample, burnin, probvarse
 #' @param mu2mcmc MCMC samples of the mu parameter
 #' @param C number of cell types
 #' @param K number of spatial domains
-#' @returns the cell type and spatial domain cluster labels, that have been corrected for label switching.
-#' Also returns the permutations returned by the label.switching::label.switching() function, which can be used to permute other parameters
-#' depending on the cluster labels, like mu, which is returned in this function as well (if mu2mcmc is provided).
-#' Also returns the cell type compositions calculated on the basis of the corrected cluster labels.
+#' @returns Returns the estimated cell type and spatial domain cluster labels, that have been corrected for label switching.
+#' Also returns the MCMC draws for mu that have been corrected for cell type label switching (if the original mu2mcmc is provided).
+#' Also returns an estimate of the cell type compositions theta calculated on the basis of the corrected cluster labels.
 #' @export
 #' @examples
-#' BayesClint_postprocess()
+#' # See documentation for BayesClint_run
 BayesClint_postprocess <- function(zeta2mcmc, kappa2mcmc,
                                    mu2mcmc = NULL,
                                    C, K) {
@@ -334,3 +350,65 @@ BayesClint_postprocess <- function(zeta2mcmc, kappa2mcmc,
 }
 
 
+
+#' Generate datasets as featured in BayesClint manuscript
+#'
+#' This function allows the user to generate datasets from any of the scenarios included in the manuscript
+#' @param Np one or three tissue sections
+#' @param C number of cell types
+#' @param K number of spatial domains
+#' @returns Returns a dataset generated according to one of the scenarios in the manuscript.
+#' @export
+#' @examples
+#' # See documentation for BayesClint_run
+simulate <- function(Np = 3) {
+
+  C <- 4 # number of cell types
+
+  K <- 4 # number of spatial domains
+
+  r <- 4 # number of components
+
+  active_perc <- 0.40 # percentage of active genes (whether differentiating or not)
+
+  num_MCs <- 50
+
+  fdr <- 0.05
+
+
+
+  # cell proportions used. Go along the lines of BASS, with four scenarios
+  theta <- matrix(0, nrow = C, ncol = K)
+
+  if (theta_type == "reg") {
+
+    prop <- c(0.8, 0.1, 0.1)
+
+    map_k2c <- function(k)
+    {
+      case_when(
+        k == 1 ~ c(1, 2, 3),
+        k == 2 ~ c(2, 3, 4),
+        k == 3 ~ c(3, 4, 1),
+        k == 4 ~ c(4, 1, 2)
+      )
+    }
+
+    for (k in 1:K) {
+
+      theta[map_k2c(k), k] <- prop
+
+    }
+
+  } else if (theta_type == "arb") {
+
+    theta1 <- c(0.2, 0.3, 0.3, 0.2)
+    theta2 <- c(0.6, 0.1, 0.1, 0.2)
+    theta3 <- c(0.05, 0.05, 0.4, 0.5)
+    theta4 <- c(0, 0.7, 0.15, 0.15)
+
+    theta <- cbind(theta1, theta2, theta3, theta4)
+
+  }
+
+}

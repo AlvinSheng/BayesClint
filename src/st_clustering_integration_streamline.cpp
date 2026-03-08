@@ -1081,8 +1081,6 @@ Rcpp::List mcmcfn(arma::vec n, int P, int r, int Np, arma::mat datasets, int Ind
                               Rcpp::Named("VarSelMean") = VarSelMean,
                               Rcpp::Named("VarSelMeanGlobal") = VarSelMeanGlobal,
                               Rcpp::Named("ups2Mean") = ups2Mean,
-                              Rcpp::Named("misc1") = Tau[1][1],
-                                                           Rcpp::Named("misc2") = s2[0],
                                                                                     Rcpp::Named("samples") = List::create(
                                                                                       Rcpp::Named("zeta2mcmc") = zeta2mcmc,
                                                                                       Rcpp::Named("kappa2mcmc") = kappa2mcmc,
@@ -1103,8 +1101,6 @@ Rcpp::List mcmcfn(arma::vec n, int P, int r, int Np, arma::mat datasets, int Ind
                               Rcpp::Named("VarSelMeanGlobal_powerset") = VarSelMeanGlobal_powerset, // unstreamlined output
                               Rcpp::Named("numdeg_powerset") = numdeg_powerset, // unstreamlined output
                               Rcpp::Named("ups2Mean") = ups2Mean,
-                              Rcpp::Named("misc1") = Tau[1][1],
-                                                           Rcpp::Named("misc2") = s2[0],
                                                                                     Rcpp::Named("samples") = List::create(
                                                                                       Rcpp::Named("zeta2mcmc") = zeta2mcmc,
                                                                                       Rcpp::Named("kappa2mcmc") = kappa2mcmc,

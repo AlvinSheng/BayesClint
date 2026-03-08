@@ -18,10 +18,9 @@ BayesClint_postprocess(zeta2mcmc, kappa2mcmc, mu2mcmc = NULL, C, K)
 \item{K}{number of spatial domains}
 }
 \value{
-the cell type and spatial domain cluster labels, that have been corrected for label switching.
-Also returns the permutations returned by the label.switching::label.switching() function, which can be used to permute other parameters
-depending on the cluster labels, like mu, which is returned in this function as well (if mu2mcmc is provided).
-Also returns the cell type compositions calculated on the basis of the corrected cluster labels.
+Returns the estimated cell type and spatial domain cluster labels, that have been corrected for label switching.
+Also returns the MCMC draws for mu that have been corrected for cell type label switching (if the original mu2mcmc is provided).
+Also returns an estimate of the cell type compositions theta calculated on the basis of the corrected cluster labels.
 }
 \description{
 Post-process the posterior sampling results to address the label switching issue associated with
@@ -31,5 +30,5 @@ estimate the cell type composition in each spatial domain based on the final est
 spatial domain labels.
 }
 \examples{
-BayesClint_postprocess()
+# See documentation for BayesClint_run
 }

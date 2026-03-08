@@ -10,7 +10,8 @@ BayesClint_preprocess(
   cutoff_sample = 100,
   cutoff_feature = 0.1,
   doBatchCorrect = F,
-  doScaling = T
+  doScaling = T,
+  k.filter = 200
 )
 }
 \arguments{
@@ -25,12 +26,8 @@ BayesClint_preprocess(
 \item{doBatchCorrect}{Logical. Whether to perform batch effect adjustment with Seurat v3 (Stuart et al., 2019) to align expression data from different tissue sections.}
 }
 \value{
-a list of pre-processed gene expression matrices, one for each tissue section.
+From the original input cnts, this function returns a list of pre-processed gene expression matrices, one for each tissue section. Additionally, from the original input info, it returns the info that excludes cells removed through the quality control process.
 }
 \description{
 A function to pre-process the data to get it ready for the BayesClint algorithm.
-}
-\examples{
-BayesClint_preprocess()
-TODO: complete the example above, once you make and document the starmap mpfc dataset and/or the basic simulation scenario dataset
 }
