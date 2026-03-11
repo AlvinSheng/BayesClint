@@ -15,18 +15,18 @@ BayesClint_preprocess(
 )
 }
 \arguments{
-\item{cnts}{list of gene count matrices across tissue sections, of dimensions number of genes by number of cells. Make sure both the rows and columns are labelled with gene names and cell names.}
+\item{cnts}{list of gene count matrices across tissue samples, of dimensions number of genes by number of cells. Make sure both the rows and columns are labelled with gene names and cell names.}
 
-\item{info}{list of spatial coordinates across tissue sections, of dimensions number of cells by number of coordinates.}
+\item{info}{list of spatial coordinates across tissue samples, of dimensions number of cells by number of coordinates.}
 
 \item{cutoff_sample}{only retain quality cells with greater than cutoff_sample counts across genes}
 
 \item{cutoff_feature}{only retain quality genes with at least cutoff_feature percent of cells with nonzero counts}
 
-\item{doBatchCorrect}{Logical. Whether to perform batch effect adjustment with Seurat v3 (Stuart et al., 2019) to align expression data from different tissue sections.}
+\item{doBatchCorrect}{Logical. Whether to perform batch effect adjustment with Seurat v3 (Stuart et al., 2019) to align expression data from different tissue samples.}
 }
 \value{
-From the original input cnts, this function returns a list of pre-processed gene expression matrices, one for each tissue section. Additionally, from the original input info, it returns the info that excludes cells removed through the quality control process.
+From the original input cnts, this function returns a list of pre-processed gene expression matrices, one for each tissue sample. Additionally, from the original input info, it returns the info that excludes cells removed through the quality control process.
 }
 \description{
 A function to pre-process the data to get it ready for the BayesClint algorithm.

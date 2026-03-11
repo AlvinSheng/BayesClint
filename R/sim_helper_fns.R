@@ -96,20 +96,20 @@ simulation_ver3_spps <- function(kappa_grid_list, cell_intens, C, K, theta = NUL
     for (k in 1:K) { # generating sub-SPPs for each spatial domain label
 
       if (k %in% c(kappa_grid)) {
-        w <- owin(mask = (kappa_grid == k))
-        k_spp <- runifpoint(cell_intens * sum(kappa_grid == k),
+        w <- spatstat.geom::owin(mask = (kappa_grid == k))
+        k_spp <- spatstat.random::runifpoint(cell_intens * sum(kappa_grid == k),
                             win = w)
 
         if (is.null(theta)) {
-          mark_df <- data.frame(zeta = rep(NA, length = npoints(k_spp)),
-                                kappa = rep(k, length = npoints(k_spp)))
+          mark_df <- data.frame(zeta = rep(NA, length = spatstat.geom::npoints(k_spp)),
+                                kappa = rep(k, length = spatstat.geom::npoints(k_spp)))
         } else {
-          mark_df <- data.frame(zeta = sample(1:C, size = npoints(k_spp), replace = T, prob = theta[, k]),
-                                kappa = rep(k, length = npoints(k_spp)))
+          mark_df <- data.frame(zeta = sample(1:C, size = spatstat.geom::npoints(k_spp), replace = T, prob = theta[, k]),
+                                kappa = rep(k, length = spatstat.geom::npoints(k_spp)))
         }
         mark_df$zeta <- factor(mark_df$zeta, levels = 1:C)
         mark_df$kappa <- factor(mark_df$kappa, levels = 1:K)
-        marks(k_spp) <- mark_df
+        spatstat.geom::marks(k_spp) <- mark_df
       } else { # for the case when the spatial domain label doesn't exist within tissue section
         next # leaving sub_spp_list[[k]] at NULL
       }
@@ -121,7 +121,7 @@ simulation_ver3_spps <- function(kappa_grid_list, cell_intens, C, K, theta = NUL
     attr(sub_spp_list, "class") <- "ppplist"
 
     # superimposing the SPPs in sub_spp_list
-    spp_list[[m]] <- superimpose(... = sub_spp_list, W = owin(xrange = c(0, ncol(kappa_grid)), yrange = c(0, nrow(kappa_grid))))
+    spp_list[[m]] <- spatstat.geom::superimpose(... = sub_spp_list, W = spatstat.geom::owin(xrange = c(0, ncol(kappa_grid)), yrange = c(0, nrow(kappa_grid))))
 
   }
 
@@ -148,7 +148,7 @@ simulation_ver3_exprs <- function(spp_list, A, P, mu, Sigma,
                                   EstUps2 = matrix(1, nrow = length(spp_list), ncol = P),
                                   tgints = matrix(0, nrow = length(spp_list), ncol = P)) {
 
-  n <- sapply(spp_list, npoints)
+  n <- sapply(spp_list, spatstat.geom::npoints)
 
   Np <- length(spp_list)
 
@@ -161,7 +161,7 @@ simulation_ver3_exprs <- function(spp_list, A, P, mu, Sigma,
   for (m in 1:Np) {
     U[[m]] <- matrix(NA, nrow = length(zeta[[m]]), ncol = r)
     for (i in 1:n[m]) {
-      U[[m]][i, ] <- mvrnorm(n = 1, mu = mu[, zeta[[m]][i] ], Sigma = Sigma)
+      U[[m]][i, ] <- MASS::mvrnorm(n = 1, mu = mu[, zeta[[m]][i] ], Sigma = Sigma)
     }
   }
 
@@ -169,7 +169,7 @@ simulation_ver3_exprs <- function(spp_list, A, P, mu, Sigma,
   E <- vector(mode = "list", length = Np)
   X <- vector(mode = "list", length = Np)
   for (m in 1:Np) {
-    E[[m]] <- mvrnorm(n[m], rep(0, P), Sigma = diag(EstUps2[m, ]))
+    E[[m]] <- MASS::mvrnorm(n[m], rep(0, P), Sigma = diag(EstUps2[m, ]))
     X[[m]] <- U[[m]] %*% A + E[[m]] + matrix(rep(tgints[m, ], n[m]), nrow = n[m], ncol = P, byrow = T)
   }
 
@@ -222,7 +222,7 @@ simulation_ver3_exprs <- function(spp_list, A, P, mu, Sigma,
 simulation_ver4_exprs <- function(spp_list, A, P, mu, Sigma,
                                   EstUps2 = matrix(1, nrow = length(spp_list), ncol = P)) {
 
-  n <- sapply(spp_list, npoints)
+  n <- sapply(spp_list, spatstat.geom::npoints)
 
   Np <- length(spp_list)
 
@@ -235,7 +235,7 @@ simulation_ver4_exprs <- function(spp_list, A, P, mu, Sigma,
   for (m in 1:Np) {
     U[[m]] <- matrix(NA, nrow = length(zeta[[m]]), ncol = r)
     for (i in 1:n[m]) {
-      U[[m]][i, ] <- mvrnorm(n = 1, mu = mu[, zeta[[m]][i] ], Sigma = Sigma)
+      U[[m]][i, ] <- MASS::mvrnorm(n = 1, mu = mu[, zeta[[m]][i] ], Sigma = Sigma)
     }
   }
 
@@ -243,7 +243,7 @@ simulation_ver4_exprs <- function(spp_list, A, P, mu, Sigma,
   E <- vector(mode = "list", length = Np)
   X <- vector(mode = "list", length = Np)
   for (m in 1:Np) {
-    E[[m]] <- mvrnorm(n[m], rep(0, P), Sigma = diag(EstUps2[m, ]))
+    E[[m]] <- MASS::mvrnorm(n[m], rep(0, P), Sigma = diag(EstUps2[m, ]))
     X[[m]] <- U[[m]] %*% A + E[[m]]
   }
 
@@ -255,7 +255,7 @@ simulation_ver4_exprs <- function(spp_list, A, P, mu, Sigma,
   for (m in 1:Np) {
     simver_expr[[m]] <- t(X[[m]])
     rownames(simver_expr[[m]]) <- paste0("gene_", seq_len(nrow(simver_expr[[m]])))
-    colnames(simver_expr[[m]]) <- paste0("cell_", seq_len(ncol(simver_expr[[m]])))
+    colnames(simver_expr[[m]]) <- paste0("cell_", seq_len(ncol(simver_expr[[m]])), "_", m)
 
     simver_info[[m]] <- data.frame(x = spp_list[[m]]$x, y = spp_list[[m]]$y,
                                    zeta = spp_list[[m]]$marks$zeta, kappa = spp_list[[m]]$marks$kappa)

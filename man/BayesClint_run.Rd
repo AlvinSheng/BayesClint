@@ -20,7 +20,7 @@ BayesClint_run(
 \arguments{
 \item{dataList}{pre-processed dataset, like the one outputted by BayesClint_preprocess}
 
-\item{info}{list of spatial coordinates across tissue sections, of dimensions number of cells by number of coordinates. This should be the info returned by the BayesClint_preprocess's quality control.}
+\item{info}{list of spatial coordinates across tissue samples, of dimensions number of cells by number of coordinates. This should be the info returned by the BayesClint_preprocess's quality control.}
 
 \item{C}{number of cell types}
 
@@ -46,7 +46,7 @@ BayesClint_run will compute it and return it as one of the outputs.}
 Returns the list of MCMC results from the BayesClint algorithm, and optionally the intermediary data file nc_quant_list. The important elements of the list of MCMC results are described below.
 \item{VarSelMean}{A row-vectorized, P (number of genes) by r matrix of the posterior probabilities of inclusion for each gene, within each component.}
 \item{VarSelMeanGlobal}{A length-P vector of the posterior probabilities of inclusion for the genes across components.}
-\item{samples}{MCMC samples of the cell type labels zeta, spatial domain labels kappa, cell type means mu, cell type compositions theta, and Potts parameter beta for each tissue section.}
+\item{samples}{MCMC samples of the cell type labels zeta, spatial domain labels kappa, cell type means mu, cell type compositions theta, and Potts parameter beta for each tissue sample.}
 }
 \description{
 A function to pre-process the data to get it ready for the BayesClint algorithm.

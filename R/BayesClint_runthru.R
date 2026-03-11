@@ -2,12 +2,12 @@
 #' Pre-process gene expression data by doing quality control, batch effect removal (if desired), log-normalization (using the counts-per-10K approach as done in Seurat by default), and scaling
 #'
 #' A function to pre-process the data to get it ready for the BayesClint algorithm.
-#' @param cnts list of gene count matrices across tissue sections, of dimensions number of genes by number of cells. Make sure both the rows and columns are labelled with gene names and cell names.
-#' @param info list of spatial coordinates across tissue sections, of dimensions number of cells by number of coordinates.
+#' @param cnts list of gene count matrices across tissue samples, of dimensions number of genes by number of cells. Make sure both the rows and columns are labelled with gene names and cell names.
+#' @param info list of spatial coordinates across tissue samples, of dimensions number of cells by number of coordinates.
 #' @param cutoff_sample only retain quality cells with greater than cutoff_sample counts across genes
 #' @param cutoff_feature only retain quality genes with at least cutoff_feature percent of cells with nonzero counts
-#' @param doBatchCorrect Logical. Whether to perform batch effect adjustment with Seurat v3 (Stuart et al., 2019) to align expression data from different tissue sections.
-#' @returns From the original input cnts, this function returns a list of pre-processed gene expression matrices, one for each tissue section. Additionally, from the original input info, it returns the info that excludes cells removed through the quality control process.
+#' @param doBatchCorrect Logical. Whether to perform batch effect adjustment with Seurat v3 (Stuart et al., 2019) to align expression data from different tissue samples.
+#' @returns From the original input cnts, this function returns a list of pre-processed gene expression matrices, one for each tissue sample. Additionally, from the original input info, it returns the info that excludes cells removed through the quality control process.
 #' @export
 #' # See documentation for BayesClint_run
 BayesClint_preprocess <- function(cnts, info, cutoff_sample = 100, cutoff_feature = 0.1,
@@ -58,6 +58,8 @@ BayesClint_preprocess <- function(cnts, info, cutoff_sample = 100, cutoff_featur
   seuList <- list()
   for (i in 1:Np) {
     suppressWarnings(seuList[[i]] <- SeuratObject::CreateSeuratObject(counts = cnts[[i]], meta.data = info[[i]], project = paste0("section", i)))
+
+    Seurat::Idents(seuList[[i]]) <- i
   }
 
   for (i in 1:length(seuList)) {
@@ -66,16 +68,20 @@ BayesClint_preprocess <- function(cnts, info, cutoff_sample = 100, cutoff_featur
                                                  nfeatures = 2000, verbose = FALSE)
   }
 
-  if (doBatchCorrect) {
-    # find anchors
-    anchors <- Seurat::FindIntegrationAnchors(object.list = seuList, k.filter = k.filter)
-    # integrate data
-    suppressWarnings(merged_obj <- Seurat::IntegrateData(anchorset = anchors))
-    # switch to integrated assay. The variable features of this assay are automatically
-    # set during IntegrateData
-    Seurat::DefaultAssay(merged_obj) <- "integrated"
-  } else {
-    merged_obj <- merge(x = seuList[[1]], y = list(seuList[[2]], seuList[[3]]))
+  if (Np > 1) {
+    if (doBatchCorrect) {
+      # find anchors
+      anchors <- Seurat::FindIntegrationAnchors(object.list = seuList, k.filter = k.filter)
+      # integrate data
+      suppressWarnings(merged_obj <- Seurat::IntegrateData(anchorset = anchors))
+      # switch to integrated assay. The variable features of this assay are automatically
+      # set during IntegrateData
+      Seurat::DefaultAssay(merged_obj) <- "integrated"
+    } else {
+      merged_obj <- merge(x = seuList[[1]], y = seuList[-1])
+    }
+  } else if (Np == 1) {
+    merged_obj <- seuList[[1]]
   }
 
   # Run the standard workflow for visualization and clustering
@@ -85,15 +91,15 @@ BayesClint_preprocess <- function(cnts, info, cutoff_sample = 100, cutoff_featur
 
 
 
-  obj_list <- Seurat::SplitObject(merged_obj, split.by = "orig.ident")
+  obj_list <- Seurat::SplitObject(merged_obj, split.by = "ident")
 
   if (doScaling) {
-    # I use the "scale.data" slot, corresponding to the z-scored/variance-stabilized data (done separately by tissue section), rather than "counts" (un-normalized raw counts) or "data" (normalized counts)
+    # I use the "scale.data" slot, corresponding to the z-scored/variance-stabilized data (done separately by tissue sample), rather than "counts" (un-normalized raw counts) or "data" (normalized counts)
     # it is equivalent to using the scale(., center = T, scale = T) on "data"
-    dataList <- lapply(obj_list, function(x) t(as.matrix(x[["integrated"]]$scale.data)))
+    dataList <- lapply(obj_list, function(x) t(as.matrix(Seurat::GetAssay(x)$scale.data)))
   } else {
     # I use the "data" slot, corresponding to the normalized counts, rather than "counts" (un-normalized raw counts) or "scale.data" (z-scored/variance-stabilized data)
-    dataList <- lapply(obj_list, function(x) t(as.matrix(x[["integrated"]]$data)))
+    dataList <- lapply(obj_list, function(x) t(as.matrix(Seurat::GetAssay(x)$data)))
   }
 
 
@@ -108,7 +114,7 @@ BayesClint_preprocess <- function(cnts, info, cutoff_sample = 100, cutoff_featur
 #'
 #' A function to pre-process the data to get it ready for the BayesClint algorithm.
 #' @param dataList pre-processed dataset, like the one outputted by BayesClint_preprocess
-#' @param info list of spatial coordinates across tissue sections, of dimensions number of cells by number of coordinates. This should be the info returned by the BayesClint_preprocess's quality control.
+#' @param info list of spatial coordinates across tissue samples, of dimensions number of cells by number of coordinates. This should be the info returned by the BayesClint_preprocess's quality control.
 #' @param C number of cell types
 #' @param K number of spatial domains
 #' @param r number of components in the factor model
@@ -124,7 +130,7 @@ BayesClint_preprocess <- function(cnts, info, cutoff_sample = 100, cutoff_featur
 #' @returns Returns the list of MCMC results from the BayesClint algorithm, and optionally the intermediary data file nc_quant_list. The important elements of the list of MCMC results are described below.
 #' \item{VarSelMean}{A row-vectorized, P (number of genes) by r matrix of the posterior probabilities of inclusion for each gene, within each component.}
 #' \item{VarSelMeanGlobal}{A length-P vector of the posterior probabilities of inclusion for the genes across components.}
-#' \item{samples}{MCMC samples of the cell type labels zeta, spatial domain labels kappa, cell type means mu, cell type compositions theta, and Potts parameter beta for each tissue section.}
+#' \item{samples}{MCMC samples of the cell type labels zeta, spatial domain labels kappa, cell type means mu, cell type compositions theta, and Potts parameter beta for each tissue sample.}
 #' @export
 #' @examples
 #' data("starmap_mpfc_subset")
@@ -354,14 +360,39 @@ BayesClint_postprocess <- function(zeta2mcmc, kappa2mcmc,
 #' Generate datasets as featured in BayesClint manuscript
 #'
 #' This function allows the user to generate datasets from any of the scenarios included in the manuscript
-#' @param Np one or three tissue sections
-#' @param C number of cell types
-#' @param K number of spatial domains
-#' @returns Returns a dataset generated according to one of the scenarios in the manuscript.
+#' @param f_idx The index of the row of the simulation results tables (e.g. Table 2) in the manuscript corresponding to the desired scenario. For example, f_idx = 9 corresponds to the scenario with N = 3, irregular theta composition, total number of genes = 200, and number of differentiating genes = 40.
+#' @returns Returns a dataset generated according to one of the scenarios in the manuscript, in the form of a list. Below are the elements of the list:
+#' \item{simver_expr}{a list of matrices (dimension number of genes by number of cells) of the natural log of the true Poisson rates for each gene and each cell, for all tissue samples.}
+#' \item{simver_info}{a list of matrices (dimension number of cells by 4) of the x- and y-coordinates, and the true cell-type and spatial-domain labels, for all tissue samples.}
+#' \item{U}{a list of matrices (dimension number of cells by number of factors) of the true factors corresponding to each cell, for all tissue samples.}
+#' \item{Xcounts}{a list of matrices (dimension number of cells by number of genes) of the observed raw count for each gene and each cell, for all tissue samples. These are the data that the BayesClint algorithm will directly analyze, along with the x- and y- coordinates of the cells.}
 #' @export
 #' @examples
-#' # See documentation for BayesClint_run
-simulate <- function(Np = 3) {
+#' test_dataset1 <- simulate(f_idx = 1)
+#' cnts <- lapply(test_dataset1$Xcounts, t)
+#' info <- test_dataset1$simver_info
+#' preprocess_results <- BayesClint_preprocess(cnts, info, cutoff_sample = 0, cutoff_feature = 0,
+#'                                             doBatchCorrect = T, doScaling = T)
+#' set.seed(1057)
+#' # The below command takes about 15 minutes to run on the above simulated dataset.
+#' run_results_sim <- BayesClint_run(dataList = preprocess_results$dataList, info = preprocess_results$info,
+#'                                   C = 4, K = 4, r = 4,
+#'                                   nbrsample = 15000,
+#'                                   burnin = 6500,
+#'                                   probvarsel = 0.05,
+#'                                   nc_quant_list = NULL,
+#'                                   chainNbr = 1)
+#' postprocess_results <- BayesClint_postprocess(run_results_sim$results$samples$zeta2mcmc,
+#'                                               run_results_sim$results$samples$kappa2mcmc,
+#'                                               run_results_sim$results$samples$mu2mcmc,
+#'                                               C = 4, K = 4)
+#' # test the ARI performances
+#' true_zeta <- do.call("c", lapply(preprocess_results$info, function(section) section$zeta))
+#' mclust::adjustedRandIndex(true_zeta, do.call("c", postprocess_results$zeta_est))
+#' true_kappa <- do.call("c", lapply(preprocess_results$info, function(section) section$kappa))
+#' mclust::adjustedRandIndex(true_kappa, do.call("c", postprocess_results$kappa_est))
+#' @references Sheng, A., Chekouo, T., Safo, S. E. (2026). BayesClint: Bayesian multi-scale clustering and multi-sample integration with feature selection for spatial transcriptomics data.
+simulate <- function(f_idx = 9) {
 
   C <- 4 # number of cell types
 
@@ -371,9 +402,37 @@ simulate <- function(Np = 3) {
 
   active_perc <- 0.40 # percentage of active genes (whether differentiating or not)
 
-  num_MCs <- 50
+  # num_MCs <- 50
 
   fdr <- 0.05
+
+  n <- c(1080, 1080, 1080)
+
+
+
+  # Making factor_df consisting of all 16 scenarios
+
+  factor_df <- data.frame(Np = integer(), theta_type = character(), P = integer(), num_deg = integer(),
+                          stringsAsFactors = FALSE)
+
+  # Setting parameters specific to a simulation scenario
+  ctr <- 1
+  for (Np in c(1, 3)) {
+    for (theta_type in c("arb", "reg")) {
+      for (P in c(200, 1000)) {
+        for (num_deg in c(40, 80)) {
+
+          # factor_string <- paste0("Np", Np, "_theta", theta_type, "_P", P, "_numdeg", num_deg)
+          # print(factor_string)
+
+          factor_df[ctr, ] <- list(Np = Np, theta_type = theta_type, P = P, num_deg = num_deg)
+
+          ctr <- ctr + 1
+
+        }
+      }
+    }
+  }
 
 
 
@@ -386,7 +445,7 @@ simulate <- function(Np = 3) {
 
     map_k2c <- function(k)
     {
-      case_when(
+      dplyr::case_when(
         k == 1 ~ c(1, 2, 3),
         k == 2 ~ c(2, 3, 4),
         k == 3 ~ c(3, 4, 1),
@@ -411,4 +470,189 @@ simulate <- function(Np = 3) {
 
   }
 
+
+
+  factor_row <- factor_df[f_idx, ]
+
+  Np <- factor_row$Np
+
+  theta_type <- factor_row$theta_type
+
+  P <- factor_row$P
+
+  num_deg <- factor_row$num_deg
+
+  factor_string <- paste0("Np", Np, "_theta", theta_type, "_P", P, "_numdeg", num_deg)
+
+
+
+  # #### Setting the spatial domain boundaries, which will be constant throughout all simulations ----
+
+  # the clusters determining the spatial domains
+  kappa_grid_list <- vector(mode = "list", length = Np)
+
+
+
+  if (Np == 1) {
+
+    # Kappa, spatial domain labels
+    kappa_mat1 <- rbind(cbind(matrix(1, nrow = 7, ncol = 4),
+                              matrix(2, nrow = 7, ncol = 4),
+                              matrix(3, nrow = 7, ncol = 4)), matrix(4, nrow = 3, ncol = 12))
+
+    kappa_grid_list <- list(kappa_mat1)
+
+  } else if (Np == 3) {
+
+    # Kappa, spatial domain labels
+    kappa_mat1 <- rbind(cbind(matrix(1, nrow = 7, ncol = 4),
+                              matrix(2, nrow = 7, ncol = 4),
+                              matrix(3, nrow = 7, ncol = 4)), matrix(4, nrow = 3, ncol = 12))
+
+    kappa_mat2 <- rbind(matrix(1, nrow = 2, ncol = 12),
+                        matrix(2, nrow = 2, ncol = 12),
+                        cbind(matrix(2, nrow = 3, ncol = 3), matrix(3, nrow = 3, ncol = 9)),
+                        cbind(matrix(4, nrow = 3, ncol = 9), matrix(3, nrow = 3, ncol = 3)))
+
+    kappa_mat3 <- matrix(c(1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2,
+                           1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2,
+                           1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2,
+                           1, 1, 1, 1, 3, 3, 4, 4, 2, 2, 2, 2,
+                           1, 1, 1, 1, 3, 3, 4, 4, 2, 2, 2, 2,
+                           1, 1, 3, 3, 3, 3, 4, 4, 4, 4, 2, 2,
+                           1, 1, 3, 3, 3, 3, 4, 4, 4, 4, 2, 2,
+                           3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4,
+                           3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4,
+                           3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4), nrow = 10, ncol = 12, byrow = T)
+
+    kappa_grid_list <- list(kappa_mat1, kappa_mat2, kappa_mat3)
+
+  }
+
+  # making sure to proportionally allocate the number of cells such that the total number is 1080 cells. I.e., have 9 cells per grid region
+  cell_intens <- 9
+
+
+
+  # generating the random cell locations
+  spp_list <- simulation_ver3_spps(kappa_grid_list, cell_intens, C, K)
+
+  xy <- lapply(spp_list, function(spp){
+    cbind(spp$x, spp$y) # as.matrix(info.i[, c("x", "y")])
+  }) # a list of spatial coordinates matrices
+
+  # ####
+
+
+
+  # Generating the cluster labels and genetic expressions for the cells ----
+
+  for (m in 1:Np) {
+
+    mark_df <- spp_list[[m]]$marks
+
+    for (k in 1:K) {
+
+      spp_list[[m]]$marks$zeta[mark_df$kappa == k] <- sample(1:C,
+                                                             size = sum(mark_df$kappa == k),
+                                                             replace = T, prob = theta[, k])
+
+    }
+
+  }
+
+
+
+  # numbers of spots
+  n <- sapply(spp_list, spatstat.geom::npoints)
+
+
+
+  # Setting the loadings matrix
+  A <- matrix(runif(r * P, min = 0.3, max = 0.5) *
+                sample(c(-1, 1), size = r * P, replace = T),
+              nrow = r, ncol = P)
+
+  # Proportion of the non differentiating genes that are noise, as opposed to active but non-differentiating genes
+  active_nondeg <- P * active_perc - num_deg # restricting the number of active genes to 40% of total genes
+
+  # Setting the last (P - active_nondeg - num_deg) of nondeg gene loadings (columns of A) to zero
+  nonnoise_idx_end <- num_deg + active_nondeg
+  noise_idx <- (nonnoise_idx_end + 1):P
+  A[, noise_idx] <- 0
+
+  # within the fourth component, I allow non-zero values for non-differentiating genes, but for the other components, I zero out the non-differentiating parts
+  deg_idx_end <- num_deg
+  if (deg_idx_end < nonnoise_idx_end) {
+    nonde_idx <- (deg_idx_end + 1):nonnoise_idx_end
+    A[1:3, nonde_idx] <- 0
+  } # otherwise, all of the active genes are differentiating, and no further zeroing is required.
+
+
+
+  # Setting the error variances
+
+  EstUps2 <- matrix(NA, nrow = Np, ncol = P)
+
+  for (j in 1:P) {
+    # I assume that there are no batch effects as pertains to the error variance,
+    # so the error variances are distributed in the same way
+
+    for (m in 1:Np) {
+
+      # same data generation for every tissue sample m
+      ups2_z1j <- rnorm(1, mean = 0, sd = 1)
+      EstUps2[m, j] <- 0.1 + abs(ups2_z1j)
+
+    }
+
+  }
+
+  # mu
+  mu <- matrix(0, nrow = r, ncol = C)
+
+  mu[, 1] <- c(2.5, -1, 1, 0)
+  mu[, 2] <- c(1, 1, 1, 0)
+  mu[, 3] <- c(-3, -1, 0, 0)
+  mu[, 4] <- c(1.5, -0.5, -2, 0)
+
+  # Sigma
+  Sigma <- LaplacesDemon::rinvwishart(nu = 2*r, S = diag(r))
+
+
+
+  sim_dataset <- simulation_ver4_exprs(spp_list, A, P, mu, Sigma, EstUps2)
+
+
+
+  # generating the fixed tissue sample-gene-specific intercepts (labelled as tau in PRECAST and DR-SC)
+  tgints <- matrix(rnorm(Np*P, mean = 0, sd = 1), nrow = Np, ncol = P)
+
+  Xcounts <- vector(mode = "list", length = Np)
+
+  # Now, do Poisson counts based on the generated log gene expression
+
+  for (m in 1:Np) {
+
+    Xcounts[[m]] <- matrix(NA, nrow = n[m], ncol = P)
+
+    Xcounts[[m]] <- matrix(rpois(n = n[m] * P,
+                                 lambda = exp(c(sim_dataset$simver_expr[[m]]) + rep(tgints[m, ], times = n[m]))),
+                           nrow = n[m], ncol = P, byrow = T)
+
+    row.names(Xcounts[[m]]) <- colnames(sim_dataset$simver_expr[[m]])
+    colnames(Xcounts[[m]]) <- row.names(sim_dataset$simver_expr[[m]])
+
+  }
+
+  sim_dataset$Xcounts <- Xcounts
+
+  # ####
+
+
+
+  return(sim_dataset)
+
 }
+
+
