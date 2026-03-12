@@ -34,9 +34,9 @@ run_results_sim <- BayesClint_run(dataList = preprocess_results$dataList, info =
                                   probvarsel = 0.05,
                                   nc_quant_list = NULL,
                                   chainNbr = 1)
-postprocess_results <- BayesClint_postprocess(run_results_sim$results$samples$zeta2mcmc,
-                                              run_results_sim$results$samples$kappa2mcmc,
-                                              run_results_sim$results$samples$mu2mcmc,
+postprocess_results <- BayesClint_postprocess(run_results_sim$zeta2mcmc,
+                                              run_results_sim$kappa2mcmc,
+                                              run_results_sim$mu2mcmc,
                                               C = 4, K = 4)
 # test the ARI performances
 true_zeta <- do.call("c", lapply(preprocess_results$info, function(section) section$zeta))

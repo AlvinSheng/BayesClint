@@ -112,7 +112,11 @@ BayesClint_preprocess <- function(cnts, info, cutoff_sample = 100, cutoff_featur
 
 #' Running the BayesClint MCMC algorithm
 #'
-#' A function to pre-process the data to get it ready for the BayesClint algorithm.
+#' This function performs the Markov Chain Monte Carlo sampling for the BayesClint model.
+#' As shown in Examples, the BayesClint pipeline begins with inputting the data into BayesClint_preprocess;
+#' then, the pre-processed data is inputted into BayesClint_run; finally, the MCMC output from BayesClint_run
+#' is inputted into BayesClint_postprocess to get the final estimated cell type and spatial domain cluster labels,
+#' as well as the estimated cell type compositions of each spatial domain.
 #' @param dataList pre-processed dataset, like the one outputted by BayesClint_preprocess
 #' @param info list of spatial coordinates across tissue samples, of dimensions number of cells by number of coordinates. This should be the info returned by the BayesClint_preprocess's quality control.
 #' @param C number of cell types
@@ -123,14 +127,18 @@ BayesClint_preprocess <- function(cnts, info, cutoff_sample = 100, cutoff_featur
 #' @param probvarsel prior probability for an entry in the factor loadings matrix to be nonzero
 #' @param nc_quant_list the quantities used to compute the normalizing constant of the Potts model within the MCMC.
 #' The nc_quant_list object will already be calculated within the BayesClint_run function;
-#' however, since this step takes a long time, one can import nc_quant_list (precalculated by an earlier run of BayesClint_run)
+#' however, since this step takes a long time, one can import nc_quant_list (pre-calculated by an earlier run of BayesClint_run)
 #' through this argument to skip this computationally intensive step. However, if the nc_quant_list argument is set to NULL,
 #' BayesClint_run will compute it and return it as one of the outputs.
 #' @param chainNbr MCMC chain number. The default is 1 for one MCMC number 1. If you want to run N multiple MCMC chains, make a loop in R as for(i in 1:N) BayesClint_run(..., chainNbr=i)
-#' @returns Returns the list of MCMC results from the BayesClint algorithm, and optionally the intermediary data file nc_quant_list. The important elements of the list of MCMC results are described below.
+#' @returns Returns the list of MCMC results from the BayesClint algorithm, and optionally the intermediary data file nc_quant_list. The elements of the list are described below.
 #' \item{VarSelMean}{A row-vectorized, P (number of genes) by r matrix of the posterior probabilities of inclusion for each gene, within each component.}
 #' \item{VarSelMeanGlobal}{A length-P vector of the posterior probabilities of inclusion for the genes across components.}
-#' \item{samples}{MCMC samples of the cell type labels zeta, spatial domain labels kappa, cell type means mu, cell type compositions theta, and Potts parameter beta for each tissue sample.}
+#' \item{zeta2mcmc}{MCMC samples of the cell type labels zeta}
+#' \item{kappa2mcmc}{MCMC samples of the spatial domain labels kappa}
+#' \item{mu2mcmc}{MCMC samples of the cell type means mu}
+#' \item{theta2mcmc}{MCMC samples of the cell type compositions for each spatial domain, theta}
+#' \item{beta2mcmc}{Potts parameter beta for each tissue sample}
 #' @export
 #' @examples
 #' data("starmap_mpfc_subset")
@@ -146,9 +154,9 @@ BayesClint_preprocess <- function(cnts, info, cutoff_sample = 100, cutoff_featur
 #' probvarsel = 0.05,
 #' nc_quant_list = NULL,
 #' chainNbr = 1)
-#' postprocess_results <- BayesClint_postprocess(run_results$results$samples$zeta2mcmc,
-#' run_results$results$samples$kappa2mcmc,
-#' run_results$results$samples$mu2mcmc,
+#' postprocess_results <- BayesClint_postprocess(run_results$zeta2mcmc,
+#' run_results$kappa2mcmc,
+#' run_results$mu2mcmc,
 #' C = 15, K = 4)
 #' # test the ARI performances (beware that this is hard-coded for the mPFC dataset)
 #' true_zeta <- do.call("c", lapply(preprocess_results$info, function(section) section$c))
@@ -289,9 +297,22 @@ BayesClint_run <- function(dataList, info, C, K, r, nbrsample, burnin, probvarse
 
 
   if (return_nc_quant_list) {
-    return(list(results = results, nc_quant_list = nc_quant_list))
+    return(list(VarSelMean = results$VarSelMean,
+                VarSelMeanGlobal = results$VarSelMeanGlobal,
+                zeta2mcmc = results$samples$zeta2mcmc,
+                kappa2mcmc = results$samples$kappa2mcmc,
+                mu2mcmc = results$samples$mu2mcmc,
+                theta2mcmc = results$samples$theta2mcmc,
+                beta2mcmc = results$samples$beta2mcmc,
+                nc_quant_list = nc_quant_list))
   } else {
-    return(list(results = results))
+    return(list(VarSelMean = results$VarSelMean,
+                VarSelMeanGlobal = results$VarSelMeanGlobal,
+                zeta2mcmc = results$samples$zeta2mcmc,
+                kappa2mcmc = results$samples$kappa2mcmc,
+                mu2mcmc = results$samples$mu2mcmc,
+                theta2mcmc = results$samples$theta2mcmc,
+                beta2mcmc = results$samples$beta2mcmc))
   }
 
 }
@@ -382,9 +403,9 @@ BayesClint_postprocess <- function(zeta2mcmc, kappa2mcmc,
 #'                                   probvarsel = 0.05,
 #'                                   nc_quant_list = NULL,
 #'                                   chainNbr = 1)
-#' postprocess_results <- BayesClint_postprocess(run_results_sim$results$samples$zeta2mcmc,
-#'                                               run_results_sim$results$samples$kappa2mcmc,
-#'                                               run_results_sim$results$samples$mu2mcmc,
+#' postprocess_results <- BayesClint_postprocess(run_results_sim$zeta2mcmc,
+#'                                               run_results_sim$kappa2mcmc,
+#'                                               run_results_sim$mu2mcmc,
 #'                                               C = 4, K = 4)
 #' # test the ARI performances
 #' true_zeta <- do.call("c", lapply(preprocess_results$info, function(section) section$zeta))
